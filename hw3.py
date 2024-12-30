@@ -17,12 +17,37 @@ class LoginManager:
         self.salt = b"$2b$12$ezgTynDsK3pzF8SStLuAPO"  # TODO: if not working, generate a new salt
 
     def register_user(self, username: str, password: str) -> None:
-        # TODO
-        pass
+        # Check if the username and password are not empty strings
+        if not username or not password:
+            raise ValueError("Username and password are required.")
+
+        # Check if the length of both username and password is at least 3 characters
+        if len(username) < 3 or len(password) < 3:
+            raise ValueError("Username and password must be at least 3 characters.")
+
+        # Check if the username already exists in the database
+        if self.collection.find_one({"username": username}):
+            raise ValueError(f"User already exists: {username}.")
+
+        # Hash the password using bcrypt
+        hashed_password = bcrypt.hashpw(password.encode('utf-8'), self.salt)
+
+        # Create a new user in the database
+        self.collection.insert_one({"username": username, "password": hashed_password, "rented_games": []})
+
 
     def login_user(self, username: str, password: str) -> object:
-        # TODO
-        pass
+        # Hash the provided password using bcrypt with the same salt
+        hashed_password = bcrypt.hashpw(password.encode('utf-8'), self.salt)
+
+        # Query the database for a matching username and hashed password
+        user = self.collection.find_one({"username": username, "password": hashed_password})
+
+        if user:
+            print(f"Logged in successfully as: {username}")
+            return user
+        else:
+            raise ValueError("Invalid username or password.")
 
 
 class DBManager:
@@ -35,16 +60,79 @@ class DBManager:
         self.game_collection = self.db["games"]
 
     def load_csv(self) -> None:
-        # TODO
-        pass
+        # Load the CSV file
+        csv_file = "NintendoGames.csv"
+        df = pd.read_csv(csv_file)
+
+        # Ensure the "genres" field is stored as a list
+        df["genres"] = df["genres"].apply(ast.literal_eval)
+
+        # Add the "is_rented" field with the value False
+        df["is_rented"] = False
+
+        # Ensure an "_id" field exists by generating unique IDs if necessary
+        if "_id" not in df.columns:
+            df["_id"] = [str(i) for i in range(len(df))]  # Assign unique IDs as strings
+
+        # Convert the DataFrame to a list of dictionaries
+        records = df.to_dict(orient="records")
+
+        # Insert records into the collection, avoiding duplicates
+        for record in records:
+            if not self.game_collection.find_one({"_id": record["_id"]}):
+                self.game_collection.insert_one(record)
+
 
     def rent_game(self, user: dict, game_title: str) -> str:
-        # TODO
-        pass
+        # Query the game collection for the provided game title
+        game = self.game_collection.find_one({"title": game_title})
+
+        if not game:
+            return f"{game_title} not found"
+
+        if game["is_rented"]:
+            return f"{game_title} is already rented"
+
+        # Mark the game as rented
+        self.game_collection.update_one(
+            {"_id": game["_id"]},
+            {"$set": {"is_rented": True}}
+        )
+
+        # Add the game ID to the user's rented games list
+        self.user_collection.update_one(
+            {"_id": user["_id"]},
+            {"$push": {"rented_games": game["_id"]}}
+        )
+
+        return f"{game_title} rented successfully"
 
     def return_game(self, user: dict, game_title: str) -> str:
-        # TODO
-        pass
+        # Retrieve the updated user to check the rented_games list
+        updated_user = self.user_collection.find_one({"_id": user["_id"]})
+
+        # Get the list of rented game IDs from the user object
+        rented_game_ids = updated_user.get("rented_games", [])
+
+        # Query the game collection for the provided game title
+        game = self.game_collection.find_one({"title": game_title})
+
+        if game and game["_id"] in rented_game_ids:
+            # Remove the game ID from the user's rented games list
+            self.user_collection.update_one(
+                {"_id": user["_id"]},
+                {"$pull": {"rented_games": game["_id"]}}
+            )
+
+            # Mark the game as not rented
+            self.game_collection.update_one(
+                {"_id": game["_id"]},
+                {"$set": {"is_rented": False}}
+            )
+
+            return f"{game_title} returned successfully"
+
+        return f"{game_title} was not rented by you"
 
     def recommend_games_by_genre(self, user: dict) -> list:
         # TODO
