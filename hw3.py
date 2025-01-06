@@ -1,3 +1,5 @@
+from locale import normalize
+
 import pymongo
 import bcrypt
 import ast
@@ -135,16 +137,94 @@ class DBManager:
         return f"{game_title} was not rented by you"
 
     def recommend_games_by_genre(self, user: dict) -> list:
-        # TODO
-        pass
+        #get the list of games rented by the user
+        rented_game_ids = user.get("rented_games", [])
+        if not rented_game_ids:
+            return ["No games rented"]
+        rented_games = self.game_collection.find_one({"_id": {"$in": rented_game_ids}})
+        genres = []
+        for game in rented_games:
+            genres.extend(game.get("geners",[]))
+
+        genre_counts = {}
+        for genre in genres:
+            if genre in genre_counts:
+                genre_counts[genre] += 1
+            else:
+                genre_counts[genre] = 1
+        total_genres = len(genres)
+        genre_probabilities = {genre: count / total_genres for genre, count in genre_counts.items()}
+
+        genre_selected = random.choices(
+            population=list(genre_probabilities.keys()),
+            weights=list(genre_probabilities.values()),
+            k=1
+        )[0]
+
+        pipeline = [
+            {"$match": {
+                #match games with the genre selected
+                "genres": genre_selected,
+                #exclude games that already rented by the user
+                "_id": {"$nin": rented_game_ids}
+            }},
+            {"$sample": {"size": 5}}
+        ]
+
+        recommend_games = list(self.game_collection.aggregate(pipeline))
+
+        return [game["title"] for game in recommend_games]
+
+
 
     def recommend_games_by_name(self, user: dict) -> list:
-        # TODO
-        pass
+        #get the list of games rented by the user
+        rented_games_ids = user.get("rented_games",[])
+
+        if not rented_games_ids:
+            return ["NO games rented"]
+
+        #pick random game from the user's rented games
+        rented_games = []
+        for game_id in rented_games_ids:
+            game = self.game_collection.find_one({"_id": game_id})
+            rented_games.append(game)
+
+        selected_game = random.choice(rented_games)
+
+        #get the title of the selected game
+        selected_title = selected_game["title"]
+
+        #get all the games titles
+        games_db = list(self.game_collection.find({},{"title":1,"_id":0}))
+        all_titles = [game["title"] for game in games_db]
+
+        #calculte TF-IDF for all the games titles
+        vectorizer = TfidfVectorizer()
+        tfidf_vectors = vectorizer.fit_transform(all_titles)
+
+        #find the position of the selected game title
+        chosen_index = all_titles.index(selected_title)
+
+        #calculte cosine similarity between the selected game to the other games
+        cosine_similarities = cosine_similarity(tfidf_vectors[chosen_index], tfidf_vectors).flatten()
+
+        sorted_score  = cosine_similarities.argsort()[::-1]
+        similar_score = []
+        for i in sorted_score :
+            if all_titles[i] != selected_title:
+                similar_score.append(i)
+
+        #list of titles for games that the user rented
+        rented_titles = [game["title"] for game in rented_games]
+        #list of recommended games exclude games that the user rented
+        recommendations = [all_titles[i] for i in similar_score if all_titles[i] not in rented_titles]
+
+        return recommendations[:5]
 
     def find_top_rated_games(self, min_score) -> list:
-        # TODO
-        pass
+        top_rated_games = self.game_collection.find({"user_score": {"$gte": min_score}}, {"title": 1, "user_score": 1, "_id": 0})
+        return list(top_rated_games)
 
     def decrement_scores(self, platform_name) -> None:
         # TODO
