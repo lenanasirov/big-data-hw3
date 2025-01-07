@@ -90,6 +90,67 @@ def run_tests():
     except Exception as e:
         print(f"Return Not Rented Game: Failed - {e}")
 
+    # Nati's tests
+    # Test: Decrement Scores
+    try:
+        # Set initial scores for testing
+        db_manager.game_collection.update_many(
+            {"platform": "Nintendo Switch"},
+            {"$set": {"user_score": 5}}
+        )
+
+        # Decrement scores
+        db_manager.decrement_scores("Nintendo Switch")
+
+        # Verify scores were decremented
+        games = db_manager.game_collection.find({"platform": "Nintendo Switch"})
+        passed = all(game["user_score"] == 4 for game in games)
+
+        if passed:
+            print("Decrement Scores: Passed")
+        else:
+            print("Decrement Scores: Failed - Scores were not decremented correctly")
+    except Exception as e:
+        print(f"Decrement Scores: Failed - {e}")
+
+    # Test: Get Average Score Per Platform
+    try:
+        # Set specific scores for testing
+        db_manager.game_collection.update_many(
+            {"platform": "Switch"},
+            {"$set": {"user_score": 8}}
+        )
+        db_manager.game_collection.update_many(
+            {"platform": "iOS"},
+            {"$set": {"user_score": 7}}
+        )
+
+        averages = db_manager.get_average_score_per_platform()
+
+        if averages.get("Switch") == 8 and averages.get("iOS") == 7:
+            print("Get Average Score Per Platform: Passed")
+        else:
+            print(f"Get Average Score Per Platform: Failed - {averages}")
+    except Exception as e:
+        print(f"Get Average Score Per Platform: Failed - {e}")
+
+    # Test: Get Genres Distribution
+    try:
+        # Set genres for testing
+        db_manager.game_collection.update_many(
+            {},
+            {"$set": {"genres": ["Action", "Adventure"]}}
+        )
+
+        distribution = db_manager.get_genres_distribution()
+
+        if distribution.get("Action") > 0 and distribution.get("Adventure") > 0:
+            print("Get Genres Distribution: Passed")
+        else:
+            print(f"Get Genres Distribution: Failed - {distribution}")
+    except Exception as e:
+        print(f"Get Genres Distribution: Failed - {e}")
+
 
 if __name__ == "__main__":
     run_tests()

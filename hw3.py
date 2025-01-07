@@ -227,14 +227,35 @@ class DBManager:
         return list(top_rated_games)
 
     def decrement_scores(self, platform_name) -> None:
-        # TODO
-        pass
+        self.game_collection.update_many(
+            {"platform": platform_name},
+            {"$inc": {"user_score": -1}}
+        )
 
     def get_average_score_per_platform(self) -> dict:
-        # TODO
-        pass
+        platform_average = {}  # Dict
+        pl = [{
+            "$group": {
+                "_id": "$platform",
+                "average_score": {"$avg": "$user_score"},
+            }
+        }]
+        results = list(self.game_collection.aggregate(pl))
+        # Append results into dict
+        for value in results:
+            platform_average[value["_id"]] = value["average_score"]
+        return platform_average
 
     def get_genres_distribution(self) -> dict:
-        # TODO
-        pass
+        genres_dist = {}
+        pl = [
+            {"$unwind": "$genres"},
+            {"$group": {"_id": "$genres", "count": {"$sum": 1}}},
+        ]
+        results = list(self.game_collection.aggregate(pl))
+        # Append results into dict
+        for value in results:
+            genres_dist[value["_id"]] = value["count"]
+        return genres_dist
+
 
