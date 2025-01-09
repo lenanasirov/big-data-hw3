@@ -35,7 +35,7 @@ class LoginManager:
         hashed_password = bcrypt.hashpw(password.encode('utf-8'), self.salt)
 
         # Create a new user in the database
-        self.collection.insert_one({"username": username, "password": hashed_password, "rented_games": []})
+        self.collection.insert_one({"username": username, "password": hashed_password, "rented_game_ids": []})
 
 
     def login_user(self, username: str, password: str) -> object:
@@ -85,6 +85,7 @@ class DBManager:
                 self.game_collection.insert_one(record)
 
 
+
     def rent_game(self, user: dict, game_title: str) -> str:
         # Query the game collection for the provided game title
         game = self.game_collection.find_one({"title": game_title})
@@ -104,26 +105,26 @@ class DBManager:
         # Add the game ID to the user's rented games list
         self.user_collection.update_one(
             {"_id": user["_id"]},
-            {"$push": {"rented_games": game["_id"]}}
+            {"$push": {"rented_game_ids": game["_id"]}}
         )
 
         return f"{game_title} rented successfully"
 
     def return_game(self, user: dict, game_title: str) -> str:
-        # Retrieve the updated user to check the rented_games list
+        # Retrieve the updated user to check the rented_game_ids list
         updated_user = self.user_collection.find_one({"_id": user["_id"]})
 
         # Get the list of rented game IDs from the user object
-        rented_game_ids = updated_user.get("rented_games", [])
+        rented_game_ids_list = updated_user.get("rented_game_ids", [])
 
         # Query the game collection for the provided game title
         game = self.game_collection.find_one({"title": game_title})
 
-        if game and game["_id"] in rented_game_ids:
+        if game and game["_id"] in rented_game_ids_list:
             # Remove the game ID from the user's rented games list
             self.user_collection.update_one(
                 {"_id": user["_id"]},
-                {"$pull": {"rented_games": game["_id"]}}
+                {"$pull": {"rented_game_ids": game["_id"]}}
             )
 
             # Mark the game as not rented
@@ -137,14 +138,20 @@ class DBManager:
         return f"{game_title} was not rented by you"
 
     def recommend_games_by_genre(self, user: dict) -> list:
+        # Retrieve the updated user to check the rented_game_ids list
+        updated_user = self.user_collection.find_one({"_id": user["_id"]})
+
         #get the list of games rented by the user
-        rented_game_ids = user.get("rented_games", [])
-        if not rented_game_ids:
+        rented_game_ids_list = updated_user.get("rented_game_ids", [])
+        if not rented_game_ids_list:
             return ["No games rented"]
-        rented_games = self.game_collection.find_one({"_id": {"$in": rented_game_ids}})
+        rented_games = self.game_collection.find({"_id": {"$in": rented_game_ids_list}})
+
+        
         genres = []
         for game in rented_games:
-            genres.extend(game.get("geners",[]))
+            genres.extend(game.get("genres",[]))
+
 
         genre_counts = {}
         for genre in genres:
@@ -154,6 +161,7 @@ class DBManager:
                 genre_counts[genre] = 1
         total_genres = len(genres)
         genre_probabilities = {genre: count / total_genres for genre, count in genre_counts.items()}
+        
 
         genre_selected = random.choices(
             population=list(genre_probabilities.keys()),
@@ -166,7 +174,7 @@ class DBManager:
                 #match games with the genre selected
                 "genres": genre_selected,
                 #exclude games that already rented by the user
-                "_id": {"$nin": rented_game_ids}
+                "_id": {"$nin": rented_game_ids_list}
             }},
             {"$sample": {"size": 5}}
         ]
@@ -176,17 +184,19 @@ class DBManager:
         return [game["title"] for game in recommend_games]
 
 
-
     def recommend_games_by_name(self, user: dict) -> list:
-        #get the list of games rented by the user
-        rented_games_ids = user.get("rented_games",[])
+        # Retrieve the updated user to check the rented_game_ids list
+        updated_user = self.user_collection.find_one({"_id": user["_id"]})
 
-        if not rented_games_ids:
-            return ["NO games rented"]
+        #get the list of games rented by the user
+        rented_games_ids_list = updated_user.get("rented_game_ids",[])
+
+        if not rented_games_ids_list:
+            return ["No games rented"]
 
         #pick random game from the user's rented games
         rented_games = []
-        for game_id in rented_games_ids:
+        for game_id in rented_games_ids_list:
             game = self.game_collection.find_one({"_id": game_id})
             rented_games.append(game)
 
@@ -243,7 +253,7 @@ class DBManager:
         results = list(self.game_collection.aggregate(pl))
         # Append results into dict
         for value in results:
-            platform_average[value["_id"]] = value["average_score"]
+            platform_average[value["_id"]] = round(value["average_score"], 3)
         return platform_average
 
     def get_genres_distribution(self) -> dict:
@@ -253,9 +263,11 @@ class DBManager:
             {"$group": {"_id": "$genres", "count": {"$sum": 1}}},
         ]
         results = list(self.game_collection.aggregate(pl))
+
         # Append results into dict
         for value in results:
             genres_dist[value["_id"]] = value["count"]
+            
         return genres_dist
 
 
