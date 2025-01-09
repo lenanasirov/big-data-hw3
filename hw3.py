@@ -72,16 +72,12 @@ class DBManager:
         # Add the "is_rented" field with the value False
         df["is_rented"] = False
 
-        # Ensure an "_id" field exists by generating unique IDs if necessary
-        if "_id" not in df.columns:
-            df["_id"] = [str(i) for i in range(len(df))]  # Assign unique IDs as strings
-
         # Convert the DataFrame to a list of dictionaries
         records = df.to_dict(orient="records")
 
         # Insert records into the collection, avoiding duplicates
         for record in records:
-            if not self.game_collection.find_one({"_id": record["_id"]}):
+            if not self.game_collection.find_one({"title": record["title"]}):
                 self.game_collection.insert_one(record)
 
 
@@ -267,7 +263,7 @@ class DBManager:
         # Append results into dict
         for value in results:
             genres_dist[value["_id"]] = value["count"]
-            
+
         return genres_dist
 
 
